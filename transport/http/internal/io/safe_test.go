@@ -133,7 +133,19 @@ func TestNewSafeReadCloser(t *testing.T) {
 
 func TestNewSafeReadCloser_WriteTo(t *testing.T) {
 	{
-		rc := &mockWriteTo{}
+		var reads, writeTos int
+		rc := &mockWriteTo{
+			mockReadCloser: mockReadCloser{
+				ReadFn: func([]byte) (int, error) {
+					reads++
+					return 0, io.EOF
+				},
+			},
+			WriteToFn: func(io.Writer) (int64, error) {
+				writeTos++
+				return 0, nil
+			},
+		}
 		writeToReadCloser := NewSafeReadCloser(rc).(*safeWriteToReadCloser)
 		_, err := writeToReadCloser.WriteTo(nil)
 		if err != nil {
@@ -145,9 +157,28 @@ func TestNewSafeReadCloser_WriteTo(t *testing.T) {
 			t.Errorf("expect no error, got %v", err)
 		}
 
-		_, err = writeToReadCloser.WriteTo(nil)
+		// net/http can still copy from the body after it was closed: once it
+		// has sent ContentLength bytes, it checks for extra bytes with
+		// io.Copy(io.Discard, body). A closed body has no more data, so that
+		// copy must succeed, and it must not reach the underlying reader.
+		n, err := io.Copy(io.Discard, writeToReadCloser)
+		if err != nil {
+			t.Errorf("expect io.Copy after Close to return no error, got %v", err)
+		}
+		if n != 0 {
+			t.Errorf("expect io.Copy after Close to copy 0 bytes, got %d", n)
+		}
+
+		_, err = writeToReadCloser.Read(make([]byte, 1))
 		if err != io.EOF {
-			t.Errorf("expect %T, got %T", io.EOF, err)
+			t.Errorf("expect Read after Close to return %v, got %v", io.EOF, err)
+		}
+
+		if e, a := 1, writeTos; e != a {
+			t.Errorf("expect underlying WriteTo to be called %d time, got %d", e, a)
+		}
+		if reads != 0 {
+			t.Errorf("expect underlying Read not to be called, got %d calls", reads)
 		}
 	}
 	{

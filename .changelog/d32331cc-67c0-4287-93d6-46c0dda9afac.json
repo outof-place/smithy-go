@@ -1,0 +1,9 @@
+{
+    "id": "d32331cc-67c0-4287-93d6-46c0dda9afac",
+    "type": "bugfix",
+    "description": "Return no error from WriteTo on a closed request body, so that net/http no longer closes the connection under a successful HTTP/1.1 response and the read of that response no longer fails with \"use of closed network connection\".",
+    "collapse": false,
+    "modules": [
+        "."
+    ]
+}
